@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>哥德尔质数解码 · PrimeWordle</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo">∏</div>
+      <div>
+        <h1>哥德尔质数解码 <span class="badge-sub">PrimeWordle</span></h1>
+        <p class="subtitle">唯一分解定理 × 高阶组合破译引擎（人机共用）</p>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="display-mode-group" title="切换格子内符号的显示方式（不影响校验）">
+        <button class="mode-btn active" data-mode="hybrid">符号+质数</button>
+        <button class="mode-btn" data-mode="prime">纯质数</button>
+        <button class="mode-btn" data-mode="symbol">纯符号(AI视角)</button>
+      </div>
+      <button id="btn-cheat" class="btn btn-cheat" title="作弊模式：透视本局真实答案">👁 透视答案</button>
+      <button id="btn-toggle-config" class="btn btn-secondary">⚙ 开局设置</button>
+    </div>
+  </header>
+
+  <!-- Collapsible New Game Config Panel -->
+  <section id="config-panel" class="config-panel">
+    <div class="config-presets">
+      <span class="label-muted">快捷预设：</span>
+      <button class="preset-btn" data-p="6" data-k="1" data-l="5" data-u="0">经典 Wordle (6/1/5)</button>
+      <button class="preset-btn" data-p="5" data-k="2" data-l="5" data-u="1">植物解码 (5/2/5)</button>
+      <button class="preset-btn" data-p="8" data-k="3" data-l="5" data-u="1">三元进阶 (8/3/5)</button>
+      <button class="preset-btn" data-p="12" data-k="5" data-l="6" data-u="1">五乘高难 (12/5/6)</button>
+      <button class="preset-btn" data-p="10" data-k="10" data-l="5" data-u="1">十乘挖矿 (10/10/5)</button>
+    </div>
+
+    <div class="config-grid">
+      <div class="slider-card">
+        <div class="slider-header">
+          <label for="slider-p">质数/符号数量 (P)</label>
+          <span id="val-p" class="slider-val">5</span>
+        </div>
+        <input id="slider-p" type="range" min="2" max="30" value="5" />
+        <small>基础词表大小，对应前 P 个质数</small>
+      </div>
+
+      <div class="slider-card">
+        <div class="slider-header">
+          <label for="slider-k">最大乘数 (K)</label>
+          <span id="val-k" class="slider-val">2</span>
+        </div>
+        <input id="slider-k" type="range" min="1" max="10" value="2" />
+        <small>每格最多相乘的符号数（支持幂次重复）</small>
+      </div>
+
+      <div class="slider-card">
+        <div class="slider-header">
+          <label for="slider-l">格子数量 (L)</label>
+          <span id="val-l" class="slider-val">5</span>
+        </div>
+        <input id="slider-l" type="range" min="2" max="10" value="5" />
+        <small>密码总长度</small>
+      </div>
+
+      <div class="options-card">
+        <label class="checkbox-row">
+          <input id="chk-underfill" type="checkbox" checked />
+          <span>允许不满填（每格 1 ~ K 个符号）</span>
+        </label>
+        <label class="checkbox-row">
+          <input id="chk-dup-slots" type="checkbox" checked />
+          <span>允许不同格子出现相同组合</span>
+        </label>
+        <div class="seed-row">
+          <input id="input-seed" type="number" placeholder="随机种子 (留空自动)" />
+          <button id="btn-new-game" class="btn btn-primary">🚀 开始新局</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main 2-column Workspace -->
+  <main class="workspace">
+    <!-- Left / Primary Game Area -->
+    <section class="board-column">
+      <!-- Status Strip -->
+      <div class="status-strip">
+        <div class="status-pills">
+          <span id="pill-config" class="pill">P=5 · K=2 · L=5</span>
+          <span id="pill-underfill" class="pill pill-muted">可不满填</span>
+          <span id="pill-turns" class="pill pill-accent">第 0 轮</span>
+          <span id="pill-tokens" class="pill pill-muted" title="该局完整轨迹对应未来 Mini-Transformer 的 Token 长度">0 Tokens</span>
+          <span id="pill-status" class="pill pill-playing">进行中</span>
+        </div>
+        <div class="legend-inline">
+          <span class="legend-item fb-exact">✓ 完全正确</span>
+          <span class="legend-item fb-misplaced">⇄ 栏位错误</span>
+          <span class="legend-item fb-partial">◐ 部分正确</span>
+          <span class="legend-item fb-wrong">⊘ 完全错误</span>
+        </div>
+      </div>
+
+      <!-- Cheat / Answer Peek Banner -->
+      <div id="cheat-banner" class="cheat-banner hidden">
+        <div class="cheat-header">
+          <div>
+            <strong>👁 透视答案（作弊模式已开启）</strong>
+            <span class="cheat-tip">点击单个答案格子可直接填入对应位置</span>
+          </div>
+          <div class="cheat-actions">
+            <button id="btn-fill-answer" class="btn btn-small btn-amber">⚡ 一键填入全部答案</button>
+            <button id="btn-hide-cheat" class="btn btn-small btn-secondary">隐藏</button>
+          </div>
+        </div>
+        <div id="cheat-slots" class="slots-row"></div>
+      </div>
+
+      <!-- Victory Banner -->
+      <div id="victory-banner" class="victory-banner hidden">
+        <div id="victory-text">🎉 破解成功！</div>
+        <button id="btn-victory-new" class="btn btn-primary btn-small">再来一局</button>
+      </div>
+
+      <!-- Active Composer -->
+      <div class="composer-card">
+        <div class="composer-header">
+          <span class="section-title">当前猜测构造区 <small class="hint">（点击格子选中，右键清空该格，点击格子内符号减 1 次幂）</small></span>
+          <div class="composer-tools">
+            <button id="btn-copy-last" class="btn btn-small btn-secondary" title="复制上一轮猜测，方便只微调 1~2 格">📋 复制上一轮</button>
+            <button id="btn-random-fill" class="btn btn-small btn-secondary" title="随机生成一组合法猜测">🎲 随机填充</button>
+            <button id="btn-clear-all" class="btn btn-small btn-secondary">🧹 清空</button>
+          </div>
+        </div>
+
+        <div id="active-slots" class="slots-row editable-slots"></div>
+
+        <!-- Symbol Palette -->
+        <div class="palette-section">
+          <div class="palette-header">
+            <span>点击下方符号叠加到 <strong>第 <span id="active-slot-num">1</span> 格</strong>（当前 <span id="active-slot-count">0</span> / <span id="active-slot-max">2</span> 个符号）</span>
+            <div class="palette-right-tools">
+              <button id="btn-card-counter" class="btn btn-small btn-counter-on" title="单格记牌器：根据历史线索自动给当前格子的符号标 ✕(排除) / ?(疑似) / ✓(必含)">🃏 记牌器：开</button>
+              <span class="hint">←/→ 切格 · Backspace 退格 · Enter 提交</span>
+            </div>
+          </div>
+          <div id="deduction-bar" class="deduction-bar"></div>
+          <div id="symbol-palette" class="symbol-palette"></div>
+        </div>
+
+        <div class="submit-row">
+          <div id="error-msg" class="error-msg"></div>
+          <button id="btn-submit" class="btn btn-primary btn-submit">✔ 提交校验 (Enter)</button>
+        </div>
+      </div>
+
+      <!-- Permanent History Log -->
+      <div class="history-card">
+        <div class="history-header">
+          <span class="section-title">📜 永久校验记录（完整保留，不丢失）</span>
+          <button id="btn-sort-history" class="btn btn-small btn-secondary">排序：最新在上 ⬇</button>
+        </div>
+        <div id="history-list" class="history-list">
+          <div class="empty-state">尚未提交猜测。请在上方构造你的第一轮组合！</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Sidebar: Deduction Notebook & Saved Archive -->
+    <aside class="sidebar-column">
+      <div class="sidebar-tabs">
+        <button class="tab-btn active" data-tab="notebook">📓 推理笔记本</button>
+        <button class="tab-btn" data-tab="archive">🗂 历史存档</button>
+      </div>
+
+      <!-- Tab 1: Notebook -->
+      <div id="tab-notebook" class="tab-pane active">
+        <div class="notebook-info">
+          <p>自动统计每个符号在历史校验中的出现情况。<strong>点击符号卡片</strong>可手动切换标记（自动保存）：</p>
+          <div class="mark-legend">
+            <span>⚪ 未标记</span>
+            <span>🟢 确认</span>
+            <span>❌ 排除</span>
+            <span>⭐ 怀疑</span>
+          </div>
+        </div>
+
+        <div id="notebook-symbols" class="notebook-symbols"></div>
+
+        <div class="scratchpad-box">
+          <div class="scratchpad-header">
+            <label for="scratchpad-input">✏ 自由草稿纸（随本局自动存档）</label>
+            <span id="notes-save-status" class="save-indicator">已保存</span>
+          </div>
+          <textarea id="scratchpad-input" placeholder="记下你的推理，例如：&#10;- 格子1肯定不含 2、7&#10;- 格子3 至少有一个 5&#10;- 第4轮和第5轮对比发现..."></textarea>
+        </div>
+      </div>
+
+      <!-- Tab 2: Saved Games Archive -->
+      <div id="tab-archive" class="tab-pane">
+        <div class="archive-header">
+          <span>本地存档：<code>data/human_games.jsonl</code></span>
+          <button id="btn-refresh-archive" class="btn btn-small btn-secondary">刷新</button>
+        </div>
+        <div id="archive-list" class="archive-list"></div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
